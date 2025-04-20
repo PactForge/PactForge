@@ -3,9 +3,9 @@ import time
 import chromadb
 from flask import Flask, request, jsonify, render_template
 from docx import Document
-from google import genai
+import google.generativeai as genai
 from google.api_core import retry
-from google.genai import types
+from google.generativeai.types import GenerationConfig
 
 app = Flask(__name__)
 
@@ -13,7 +13,7 @@ app = Flask(__name__)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
     raise ValueError("GOOGLE_API_KEY environment variable not set")
-client = genai.Client(api_key=GOOGLE_API_KEY)
+genai.configure(api_key=GOOGLE_API_KEY)
 
 # ChromaDB setup
 clientdb = chromadb.PersistentClient(path="./chroma_db")
@@ -25,21 +25,21 @@ contractor = clientdb.get_or_create_collection(name="contractor_agreements")
 all_dbs = [rent, nda, employment, franchise, contractor]
 
 # Model configuration
-model_config = types.GenerateContentConfig(temperature=0.75, top_p=0.9)
+model_config = GenerationConfig(temperature=0.75, top_p=0.9)
 
 # Retry mechanism for API calls
 def is_retriable(e):
-    return isinstance(e, genai.errors.APIError) and e.code in {429, 503}
+    return isinstance(e, Exception) and hasattr(e, 'code') and e.code in {429, 503}
 
 @retry.Retry(predicate=is_retriable)
 def generate_embeddings(cl, etype):
     embedding_task = "retrieval_document" if etype else "retrieval_query"
-    embed = client.models.embed_content(
+    response = genai.embed_content(
         model="models/text-embedding-004",
-        contents=cl,
-        config=types.EmbedContentConfig(task_type=embedding_task)
+        content=cl,
+        task_type=embedding_task
     )
-    return [e.values for e in embed.embeddings]
+    return [response['embedding']]
 
 def read_docx(endname):
     path = f"./Clauses/{endname}.docx"
@@ -101,52 +101,37 @@ if not any(db.count() > 0 for db in all_dbs):
 
 def strip_type(agr: str):
     agreement_types = ["rent", "nda", "contractor", "employment", "franchise"]
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""Return the type of agreement in one lowercase word from {agreement_types}. Input: {agr}"""
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config=model_config
-    )
+    response = model.generate_content(prompt, generation_config=model_config)
     return response.text.strip().lower()
 
 def pos_neg(response: str):
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""Classify sentiment: Reply '1' for positive, '0' for negative. Sentence = {response}"""
-    response_heat = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config=model_config
-    )
+    response_heat = model.generate_content(prompt, generation_config=model_config)
     return bool(int(response_heat.text))
 
 def perform_analysis(atype, impt):
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""As a legal assistant, evaluate if {impt} is sufficient for a {atype} agreement. Respond with:
     - 'Yes. All essential information seems to be present.' if comprehensive.
     - 'No, The following essential information seems to be missing or unclear: [list]' if details are missing.
     - 'No, The provided information is too vague or insufficient.' if vague."""
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config=model_config
-    )
+    response = model.generate_content(prompt, generation_config=model_config)
     return response.text, pos_neg(response.text)
 
 def obtain_information_holes(final_type, important_info, extra_info):
+    model = genai.GenerativeModel('gemini-1.5-flash')
     total_info = important_info + extra_info
     prompt = f"""Identify missing or unclear information for a {final_type} agreement based on: {total_info}. Return specific details needed."""
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config=model_config
-    )
+    response = model.generate_content(prompt, generation_config=model_config)
     return response.text
 
 def get_data(holes: str, final_type):
+    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""Retrieve information for {holes} to generate a {final_type} agreement."""
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config=model_config
-    )
+    response = model.generate_content(prompt, generation_config=model_config)
     return response.text
 
 @app.route('/')
@@ -208,6 +193,7 @@ def send_message():
         obtained_info = get_data(info_holes, state['final_type'])
         
         # Generate final agreement
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Generate a {state['final_type']} agreement using:
         User info: {state['important_info']}
         Extra info: {state['extra_info']}
@@ -216,11 +202,7 @@ def send_message():
         Additional info: {obtained_info}
         Ensure the agreement is concise, legally robust, and clear."""
         
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=model_config
-        )
+        response = model.generate_content(prompt, generation_config=model_config)
         
         # Reset state
         app.state = {'req': False, 'final_type': None, 'important_info': '', 'extra_info': '', 'step': 'agreement_type'}
