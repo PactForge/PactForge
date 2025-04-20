@@ -208,6 +208,3 @@ def send_message():
         app.state = {'req': False, 'final_type': None, 'important_info': '', 'extra_info': '', 'step': 'agreement_type'}
         
         return jsonify({'response': response.text})
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
