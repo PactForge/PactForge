@@ -76,7 +76,7 @@ def initialize_chromadb():
     for t in agreement_types:
         clauses = read_docx(t)
         all_clauses.append(clauses)
-    
+
     for j, dataset in enumerate(all_clauses):
         if not dataset:
             print(f"No clauses for {agreement_types[j]}, collection will be empty")
@@ -143,7 +143,7 @@ def send_message():
     global final_type, important_info, extra_info, req
     data = request.json
     user_input = data.get('message', '').strip()
-    
+
     if not hasattr(app, 'state'):
         app.state = {
             'req': False,
@@ -152,9 +152,9 @@ def send_message():
             'extra_info': '',
             'step': 'agreement_type'
         }
-    
+
     state = app.state
-    
+
     if state['step'] == 'agreement_type':
         final_type = strip_type(user_input)
         agreement_types = ["rent", "nda", "contractor", "employment", "franchise"]
@@ -163,19 +163,19 @@ def send_message():
         state['final_type'] = final_type
         state['step'] = 'important_info'
         return jsonify({'response': f"Please provide important information for your {final_type} agreement (e.g., parties, duration, financial details)."})
-    
+
     elif state['step'] == 'important_info':
         state['important_info'] = user_input
         state['step'] = 'extra_info'
         return jsonify({'response': f"Provide any extra information to tailor your {state['final_type']} agreement (e.g., specific clauses, conditions)."})
-    
+
     elif state['step'] == 'extra_info':
         state['extra_info'] = user_input
         analysis, is_positive = perform_analysis(state['final_type'], state['important_info'])
         if not is_positive:
             state['step'] = 'important_info'
             return jsonify({'response': analysis + " Please provide more information."})
-        
+
         state['req'] = True
         # Retrieve relevant clauses
         dbname = state['final_type'] + "_agreements"
@@ -184,14 +184,14 @@ def send_message():
         query_embed = generate_embeddings(user_query, False)
         results = querydb.query(query_embeddings=query_embed, n_results=querydb.count())
         relevant_documents = results['documents'] if results['documents'] else []
-        
+
         # Get sample agreements
         sample_agreements = extract_samples(state['final_type'])
-        
+
         # Get additional info
         info_holes = obtain_information_holes(state['final_type'], state['important_info'], state['extra_info'])
         obtained_info = get_data(info_holes, state['final_type'])
-        
+
         # Generate final agreement
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Generate a {state['final_type']} agreement using:
@@ -201,10 +201,14 @@ def send_message():
         Sample agreements: {sample_agreements}
         Additional info: {obtained_info}
         Ensure the agreement is concise, legally robust, and clear."""
-        
+
         response = model.generate_content(prompt, generation_config=model_config)
-        
+
         # Reset state
         app.state = {'req': False, 'final_type': None, 'important_info': '', 'extra_info': '', 'step': 'agreement_type'}
-        
+
         return jsonify({'response': response.text})
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
