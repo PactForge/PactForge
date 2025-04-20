@@ -209,6 +209,5 @@ def send_message():
 
         return jsonify({'response': response.text})
 
-
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+# The following lines should be removed or commented out for Render deployment
+# port = int(os.environ.get('PORT', 5000))
