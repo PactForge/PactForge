@@ -44,18 +44,23 @@ def generate_embeddings(cl, etype):
 def read_docx(endname):
     path = f"./Clauses/{endname}.docx"
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Document {path} not found")
+        print(f"Warning: {path} not found, returning empty clauses")
+        return []
     doc = Document(path)
     paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
     return paragraphs
 
 def extract_doxc(path):
+    if not os.path.exists(path):
+        print(f"Warning: {path} not found, returning None")
+        return None
     doc = Document(path)
     return doc
 
 def extract_samples(endname):
     dataset_path = f"./sampleagreements/{endname}/{endname}"
     if not os.path.exists(dataset_path):
+        print(f"Warning: {dataset_path} not found, returning empty list")
         return []
     docx_files = []
     for item in os.listdir(dataset_path):
@@ -69,24 +74,26 @@ def initialize_chromadb():
     agreement_types = ["rent", "nda", "employment", "franchise", "contractor"]
     all_clauses = []
     for t in agreement_types:
-        try:
-            clauses = read_docx(t)
-            all_clauses.append(clauses)
-        except FileNotFoundError:
-            all_clauses.append([])
-            print(f"Warning: {t}.docx not found in Clauses/")
+        clauses = read_docx(t)
+        all_clauses.append(clauses)
     
     for j, dataset in enumerate(all_clauses):
         if not dataset:
+            print(f"No clauses for {agreement_types[j]}, collection will be empty")
             continue
         embeds, ids, documents = [], [], []
         for i, clause in enumerate(dataset):
-            vector = generate_embeddings(clause, True)
-            time.sleep(0.4)  # Rate limit
-            embeds.append(vector[0])
-            ids.append(f"clause-{j}-{i}")
-            documents.append(clause)
-        all_dbs[j].add(embeddings=embeds, ids=ids, documents=documents)
+            try:
+                vector = generate_embeddings(clause, True)
+                time.sleep(0.4)  # Rate limit
+                embeds.append(vector[0])
+                ids.append(f"clause-{j}-{i}")
+                documents.append(clause)
+            except Exception as e:
+                print(f"Error embedding clause {i} for {agreement_types[j]}: {e}")
+        if embeds:
+            all_dbs[j].add(embeddings=embeds, ids=ids, documents=documents)
+            print(f"Initialized {agreement_types[j]} with {len(embeds)} clauses")
 
 # Run initialization if collections are empty
 if not any(db.count() > 0 for db in all_dbs):
@@ -191,7 +198,7 @@ def send_message():
         user_query = state['important_info'] + state['extra_info']
         query_embed = generate_embeddings(user_query, False)
         results = querydb.query(query_embeddings=query_embed, n_results=querydb.count())
-        relevant_documents = results['documents']
+        relevant_documents = results['documents'] if results['documents'] else []
         
         # Get sample agreements
         sample_agreements = extract_samples(state['final_type'])
