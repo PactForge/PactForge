@@ -1,7 +1,7 @@
 fastapi==0.95.0
 uvicorn[gunicorn]==0.22.0
-google-genai==1.7.0
+google-genai==1.6.0  # Updated to support pydantic 1.x
 chromadb==0.4.3
 python-docx==0.8.11
-pydantic==1.10.9
+pydantic==1.10.9  # Keep pydantic 1.x
 requests==2.28.2
