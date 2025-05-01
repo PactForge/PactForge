@@ -1,7 +1,7 @@
-fastapi==0.96.0  # Use a newer version that supports pydantic 2.x
+fastapi==0.96.0
 uvicorn[gunicorn]==0.22.0
-google-genai==1.6.0
+google-genai==1.7.0
 chromadb==0.4.3
 python-docx==0.8.11
-pydantic==2.0.0  # Use pydantic 2.x
+pydantic==1.10.9  #or pydantic==1.9.2 or pydantic==1.10.2
 requests==2.28.2
